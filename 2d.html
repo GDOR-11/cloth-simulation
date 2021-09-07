@@ -14,37 +14,34 @@
 	<body>
 		<canvas id = 'canvas' style = 'background-color: #000;'></canvas>
 		<script>
-			class Point {
-				constructor(x, y, vx, vy, locked = false) {
+			class Vector {
+				constructor(x, y) {
 					this.x = x;
 					this.y = y;
-					this.prev_x = x - vx * dt;
-					this.prev_y = y - vy * dt;
-					this.locked = locked;
 				}
 				add(x) {
-					if(x instanceof Point) {
-						return new Point(this.x + x.x, this.y + x.y);
+					if(x instanceof Vector) {
+						return new Vector(this.x + x.x, this.y + x.y);
 					}
-					return new Point(this.x + x, this.y + x);
+					return new Vector(this.x + x, this.y + x);
 				}
 				sub(x) {
-					if(x instanceof Point) {
-						return new Point(this.x - x.x, this.y - x.y);
+					if(x instanceof Vector) {
+						return new Vector(this.x - x.x, this.y - x.y);
 					}
-					return new Point(this.x - x, this.y - x);
+					return new Vector(this.x - x, this.y - x);
 				}
 				mul(x) {
-					if(x instanceof Point) {
-						return new Point(this.x * x.x, this.y * x.y);
+					if(x instanceof Vector) {
+						return new Vector(this.x * x.x, this.y * x.y);
 					}
-					return new Point(this.x * x, this.y * x);
+					return new Vector(this.x * x, this.y * x);
 				}
 				div(x) {
-					if(x instanceof Point) {
-						return new Point(this.x / x.x, this.y / x.y);
+					if(x instanceof Vector) {
+						return new Vector(this.x / x.x, this.y / x.y);
 					}
-					return new Point(this.x / x, this.y / x);
+					return new Vector(this.x / x, this.y / x);
 				}
 				set(v) {
 					this.x = v.x;
@@ -53,12 +50,20 @@
 				norm() {
 					var l = this.length();
 					if(l == 0) {
-						return new Point(0, 0, this.vx, this.vy, this.locked);
+						return new Vector(0, 0);
 					}
 					return this.div(this.length());
 				}
 				length() {
 					return Math.hypot(this.x, this.y);
+				}
+			}
+			class Point extends Vector {
+				constructor(x, y, vx, vy, locked = false) {
+					super(x, y);
+					this.prev_x = x - vx * dt;
+					this.prev_y = y - vy * dt;
+					this.locked = locked;
 				}
 				update(dt) {
 					if(this.locked) {
