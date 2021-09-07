@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang = 'en-US'>
+	<head>
+		<meta charset = 'utf-8' name = 'viewport' content = 'width = device-width, initial-scale = 1'>
+		<meta http-equiv = 'X-UA-Compatible' content = 'ie = edge'>
+		<title>cloth simulation</title>
+		<style>
+			body {
+				margin: 0px;
+				overflow: hidden;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id = 'canvas' style = 'background-color: #000;'></canvas>
+		<script>
+			class Point {
+				constructor(x, y, vx, vy, locked = false) {
+					this.x = x;
+					this.y = y;
+					this.prev_x = x - vx * dt;
+					this.prev_y = y - vy * dt;
+					this.last_drawn_x = x;
+					this.last_drawn_y = y;
+					this.locked = locked;
+				}
+				add(x) {
+					if(x instanceof Point) {
+						return new Point(this.x + x.x, this.y + x.y);
+					}
+					return new Point(this.x + x, this.y + x);
+				}
+				sub(x) {
+					if(x instanceof Point) {
+						return new Point(this.x - x.x, this.y - x.y);
+					}
+					return new Point(this.x - x, this.y - x);
+				}
+				mul(x) {
+					if(x instanceof Point) {
+						return new Point(this.x * x.x, this.y * x.y);
+					}
+					return new Point(this.x * x, this.y * x);
+				}
+				div(x) {
+					if(x instanceof Point) {
+						return new Point(this.x / x.x, this.y / x.y);
+					}
+					return new Point(this.x / x, this.y / x);
+				}
+				set(v) {
+					this.x = v.x;
+					this.y = v.y;
+				}
+				norm() {
+					var l = this.length();
+					if(l == 0) {
+						return new Point(0, 0, this.vx, this.vy, this.locked);
+					}
+					return this.div(this.length());
+				}
+				length() {
+					return Math.hypot(this.x, this.y);
+				}
+				update(dt) {
+					if(this.locked) {
+						return;
+					}
+					var x = this.x;
+					var y = this.y;
+					this.x += this.x - this.prev_x + gx * dt * dt;
+					this.y += this.y - this.prev_y + gy * dt * dt;
+					this.prev_x = x;
+					this.prev_y = y;
+				}
+			}
+			class Joint {
+				constructor(pointA, pointB) {
+					this.pointA = pointA;
+					this.pointB = pointB;
+					this.length = pointA.sub(pointB).length();
+				}
+				update(dt) {
+					var center = this.pointA.add(this.pointB).div(2);
+					var dir = this.pointA.sub(this.pointB).norm();
+					if(!this.pointA.locked) {
+						this.pointA.set(center.add(dir.mul(this.length / 2)));
+					}
+					if(!this.pointB.locked) {
+						this.pointB.set(center.sub(dir.mul(this.length / 2)));
+					}
+				}
+				render() {
+					ctx.lineWidth = 3;
+					ctx.strokeStyle = 'grey';
+					ctx.lineJoin = 'mitter';
+					ctx.beginPath();
+					ctx.moveTo(this.pointA.x, this.pointA.y);
+					ctx.lineTo(this.pointB.x, this.pointB.y);
+					ctx.stroke();
+				}
+			}
+			function resize() {
+				width = window.innerWidth;
+				height = window.innerHeight;
+				canvas.width = width;
+				canvas.height = height;
+			}
+			var canvas = document.getElementById('canvas');
+			var ctx = canvas.getContext('2d');
+			resize();
+			window.onresize = resize;
+
+			var gx = 0;
+			var gy = 980.665;
+			var num_points_x = 32;
+			var num_points_y = 32;
+			var physics_iterations = 1;
+			var joint_iterations = 16;
+
+			var dt = 1 / (60 * physics_iterations);
+
+			var points = [];
+			var joints = [];
+
+			var min = Math.min(width, height);
+			var max = Math.max(width, height);
+			if(max == width) {
+				var start_x = (width - height + 200) / 2;
+				var end_x = (width + height - 200) / 2;
+				var start_y = 100;
+				var end_y = height - 100;
+			} else {
+				var start_x = 100;
+				var end_x = width - 100;
+				var start_y = (height - width + 200) / 2;
+				var end_y = (height + width - 200) / 2;
+			}
+			for(var i = 0;i < num_points_x;i++) {
+				var norm_i = i / (num_points_x - 1);
+				var x = (end_x - start_x) * norm_i + start_x;
+				for(var j = 0;j < num_points_y;j++) {
+					var norm_j = j / (num_points_y - 1);
+					var y = (end_y - start_y) * norm_j + start_y;
+					points.push(new Point(x, y, 0, 0, norm_j == 0 && (norm_i == 0 || norm_i == 1)));
+				}
+			}
+			for(var i = 0;i < points.length;i++) {
+				if(i % num_points_y != num_points_y - 1) {
+					joints.push(new Joint(points[i], points[i + 1]));
+				}
+				if(points[i + num_points_y] != undefined) {
+					joints.push(new Joint(points[i], points[i + num_points_y]));
+				}
+			}
+
+			function render() {
+				ctx.clearRect(0, 0, width, height);
+				for(var joint of joints) {
+					joint.render();
+				}
+				for(var i = 0;i < physics_iterations;i++) {
+					for(var point of points) {
+						point.update(dt);
+					}
+					for(var j = 0;j < joint_iterations;j++) {
+						for(var joint of joints) {
+							joint.update(dt);
+						}
+					}
+				}
+				requestAnimationFrame(render);
+			}
+			requestAnimationFrame(render);
+
+
+			var passive = false;
+			try {
+				window.addEventListener('event-listener', null, Object.defineProperty({}, 'passive', {get: () => passive = {passive: true}}));
+			} catch(error) {}
+
+			var point_dragged = null;
+			var point_locked = false;
+			var mouse_moved = false;
+			window.addEventListener('mousedown', function(event) {
+				for(var point of points) {
+					var dx = point.x - event.clientX;
+					var dy = point.y - event.clientY;
+					if(dx * dx + dy * dy <= 100) {
+						point_dragged = point;
+						point_locked = point_dragged.locked;
+						point_dragged.locked = true;
+						break;
+					}
+				}
+			}, passive);
+			window.addEventListener('mouseup', function(event) {
+				if(point_dragged != null) {
+					if(mouse_moved) {
+						point_dragged.locked = point_locked;
+					} else {
+						point_dragged.locked = !point_locked;
+					}
+					point_dragged = null;
+				}
+				mouse_moved = false;
+			}, passive);
+			window.addEventListener('mousemove', function(event) {
+				if(point_dragged != null) {
+					mouse_moved = true;
+					point_dragged.x = event.clientX;
+					point_dragged.y = event.clientY;
+				}
+			}, passive);
+		</script>
+	</body>
+</html>
