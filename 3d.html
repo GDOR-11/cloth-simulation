@@ -1,11 +1,261 @@
+<!-- this code sucks -->
+<!-- first reason: is mixes object oriented and function programming in a crazy way -->
+<!-- second reason: it is not flexible IN ANY WAY -->
+<!-- third reason: it doesnt use THREE.js, which means that there is no hardware accelereation when drawing in 3d and nothing is made to be optimized -->
+<!-- fourth reason: i forgot to put in some comments (which i almost always do :|) -->
+
+<!-- all of those mixed together make a really really bad code that you shouldn't even try to understand -->
 <!DOCTYPE html>
 <html lang = 'en-US'>
 	<head>
 		<meta charset = 'utf-8' name = 'viewport' content = 'width = device-width, initial-scale = 1'>
 		<meta http-equiv = 'X-UA-Compatible' content = 'ie = edge'>
-		<title>not made (yet)</title>
+		<title>3d cloth simulation</title>
+		<style>
+			body {
+				margin: 0px;
+				overflow: hidden;
+			}
+		</style>
 	</head>
 	<body>
-    <h3>unfortunately i haven't created a 3d cloth simulation yet, but if you come back later there may be a 3d cloth simulation waitig for you :)</h3>
+		<canvas id = 'canvas' style = 'background-color: #000;'></canvas>
+		<script>
+			class Vector {
+				constructor(x, y, z) {
+					this.x = x;
+					this.y = y;
+					this.z = z;
+				}
+				add(x) {
+					if(x instanceof Vector) {
+						return new Vector(this.x + x.x, this.y + x.y, this.z + x.z);
+					}
+					return new Vector(this.x + x, this.y + x, this.z + x);
+				}
+				sub(x) {
+					if(x instanceof Vector) {
+						return new Vector(this.x - x.x, this.y - x.y, this.z - x.z);
+					}
+					return new Vector(this.x - x, this.y - x, this.z - x);
+				}
+				mul(x) {
+					if(x instanceof Vector) {
+						return new Vector(this.x * x.x, this.y * x.y, this.z * x.z);
+					}
+					return new Vector(this.x * x, this.y * x, this.z * x);
+				}
+				div(x) {
+					if(x instanceof Vector) {
+						return new Vector(this.x / x.x, this.y / x.y, this.z + x.z);
+					}
+					return new Vector(this.x / x, this.y / x, this.z / x);
+				}
+				set(v) {
+					this.x = v.x;
+					this.y = v.y;
+					this.z = v.z;
+				}
+				norm() {
+					var l = this.length();
+					if(l == 0) {
+						return new Vector(0, 0, 0);
+					}
+					return this.div(this.length());
+				}
+				length() {
+					return Math.hypot(this.x, this.y, this.z);
+				}
+				clone() {
+					return new Vector(this.x, this.y, this.z);
+				}
+			}
+			class Point extends Vector {
+				constructor(x, y, z, vx, vy, vz, locked = false) {
+					super(x, y, z);
+					this.prev_x = this.x - vx * dt;
+					this.prev_y = this.y - vy * dt;
+					this.prev_z = this.z - vz * dt;
+					this.locked = locked;
+				}
+				update(dt) {
+					if(this.locked) {
+						return;
+					}
+					var pos = this.clone();
+					this.x += this.x - this.prev_x + gx * dt * dt;
+					this.y += this.y - this.prev_y + gy * dt * dt;
+					this.z += this.z - this.prev_z + gz * dt * dt;
+					this.prev_x = pos.x;
+					this.prev_y = pos.y;
+					this.prev_z = pos.z;
+				}
+			}
+			class Joint {
+				constructor(pointA, pointB) {
+					this.pointA = pointA;
+					this.pointB = pointB;
+					this.length = pointA.sub(pointB).length();
+				}
+				update(dt) {
+					var center = this.pointA.add(this.pointB).div(2);
+					var dir = this.pointA.sub(this.pointB).norm();
+					if(!this.pointA.locked) {
+						this.pointA.set(center.add(dir.mul(this.length / 2)));
+					}
+					if(!this.pointB.locked) {
+						this.pointB.set(center.sub(dir.mul(this.length / 2)));
+					}
+				}
+				render() {
+					// https://en.wikipedia.org/wiki/3D_projection#Perspective_projection
+					var translatedA = this.pointA.sub(camera_position);
+					var translatedB = this.pointB.sub(camera_position);
+					var rotatedA = rotate(translatedA);
+					var rotatedB = rotate(translatedB);
+					if(rotatedA.z < 0 || rotatedB.z < 0) { // i could have done a fancier clipping algorithm, but just ignoring is enough for me :|
+						return;
+					}
+					var projectedA = project(rotatedA);
+					var projectedB = project(rotatedB);
+
+					ctx.strokeStyle = 'white';
+					ctx.lineJoin = 'mitter';
+					ctx.beginPath();
+					ctx.moveTo(projectedA.x, projectedA.y);
+					ctx.lineTo(projectedB.x, projectedB.y);
+					ctx.stroke();
+				}
+			}
+			function rotate(p) {
+				var cx = Math.cos(theta.x);
+				var sx = Math.sin(theta.x);
+				var cy = Math.cos(theta.y);
+				var sy = Math.sin(theta.y);
+				var cz = Math.cos(theta.z);
+				var sz = Math.sin(theta.z);
+
+				return new Vector(
+					cy * (sz * p.y + cz * p.x) - sy * p.z,
+					sx * (cy * p.z + sy * (sz * p.y + cz * p.x)) + cx * (cz * p.y - sz * p.x),
+					cx * (cy * p.z + sy * (sz * p.y + cz * p.x)) - sx * (cz * p.y - sz * p.x)
+				);
+			}
+			function project(p) {
+				return new Vector(
+					projection_plane_position.x + p.x * projection_plane_position.z / p.z,
+					projection_plane_position.y + p.y * projection_plane_position.z / p.z
+				);
+			}
+			function calculate_camera_position() {
+				camera_position.z -= cloth_center.z;
+
+				camera_position.x = Math.sin(-theta.y) * Math.cos(theta.x) * camera_distance_to_cloth;
+				camera_position.y = Math.sin(theta.x) * camera_distance_to_cloth + height_cloth / 2;
+				camera_position.z = -Math.cos(-theta.y) * Math.cos(theta.x) * camera_distance_to_cloth;
+
+				camera_position.z += cloth_center.z;
+			}
+			function resize() {
+				width = window.innerWidth;
+				height = window.innerHeight;
+				canvas.width = width;
+				canvas.height = height;
+			}
+			var canvas = document.getElementById('canvas');
+			var ctx = canvas.getContext('2d');
+			resize();
+			window.onresize = resize;
+
+
+			var gx = 0;
+			var gy = 98.0665;
+			var gz = 0;
+			var width_cloth = 16;
+			var height_cloth = 16;
+			var num_segments_x = 16;
+			var num_segments_y = 16;
+			var physics_iterations = 8;
+			var joint_iterations = 1;
+
+
+			var dt = 1 / (60 * physics_iterations);
+			var cloth_center = new Vector(0, height_cloth / 2, -height_cloth / 2);
+
+			var points = [];
+			var joints = [];
+
+			for(var i = 0;i < num_segments_x;i++) {
+				var norm_i = i / (num_segments_x - 1);
+				var x = (norm_i - 0.5) * width_cloth;
+				for(var j = 0;j < num_segments_y;j++) {
+					var norm_j = j / (num_segments_y - 1);
+					var y = (norm_j - 0.5) * height_cloth;
+					points.push(new Point(x, 0, y, 0, 0, 0, norm_j == 0 && (norm_i == 0 || norm_i == 1)));
+				}
+			}
+			for(var i = 0;i < points.length;i++) {
+				if(i % num_segments_y != num_segments_y - 1) {
+					joints.push(new Joint(points[i], points[i + 1]));
+				}
+				if(points[i + num_segments_y] != undefined) {
+					joints.push(new Joint(points[i], points[i + num_segments_y]));
+				}
+			}
+
+
+			var theta = new Vector(Math.PI, 0, 0);
+			var rotate_speed = 0.01;
+			var scroll_speed = 0.01;
+			var camera_distance_to_cloth = 32;
+			var camera_position = new Vector(0, 0 ,0);
+			var projection_plane_position = new Vector(width / 2, height / 2, -500);
+
+			calculate_camera_position();
+
+			function render() {
+				ctx.clearRect(0, 0, width, height);
+				for(var i = 0;i < physics_iterations;i++) {
+					for(var point of points) {
+						point.update(dt);
+					}
+					for(var j = 0;j < joint_iterations;j++) {
+						for(var joint of joints) {
+							joint.update(dt);
+						}
+					}
+				}
+				for(var joint of joints) {
+					joint.render();
+				}
+				requestAnimationFrame(render);
+			}
+			requestAnimationFrame(render);
+
+			var passive = false;
+			try {
+				window.addEventListener('event-listener', null, Object.defineProperty({}, 'passive', {get: () => passive = {passive: true}}));
+			} catch(error) {}
+
+			var mouse_down = false;
+			window.addEventListener('mousedown', function(event) {
+				mouse_down = true;
+			}, passive);
+			window.addEventListener('mouseup', function(event) {
+				mouse_down = false;
+			}, passive);
+			window.addEventListener('mousemove', function(event) {
+				if(mouse_down) {
+					theta.x += event.movementY * rotate_speed;
+					theta.x = Math.min(Math.max(theta.x, Math.PI / 2), 3 * Math.PI / 2);
+					theta.y += event.movementX * rotate_speed;
+					calculate_camera_position();
+				}
+			}, passive);
+			window.addEventListener('mousewheel', function(event) {
+				camera_distance_to_cloth *= 1 + 0.1 * Math.sign(event.deltaY);
+				calculate_camera_position();
+			}, passive);
+		</script>
 	</body>
 </html>
